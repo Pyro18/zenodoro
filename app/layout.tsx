@@ -2,9 +2,17 @@ import type { Metadata } from 'next'
 import './globals.css'
 
 export const metadata: Metadata = {
-  title: 'v0 App',
-  description: 'Created with v0',
-  generator: 'v0.dev',
+  title: 'Zenodoro',
+  description: 'Focus and productivity with Zenodoro',
+  keywords: ['productivity', 'focus', 'pomodoro', 'zenodoro'],
+  authors: [{ name: 'Pyrodev', url: 'https://pyrodev.it' }],
+  creator: 'Pyrodev',
+  openGraph: {
+    title: 'Zenodoro',
+    description: 'Focus and productivity with Zenodoro',
+    url: 'https://pyrodev.it/zenodoro',
+    siteName: 'Pyrodev Zenodoro',
+  },
 }
 
 export default function RootLayout({
