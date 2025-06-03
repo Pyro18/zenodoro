@@ -29,6 +29,11 @@ import {
   LogOut,
   ExternalLink,
 } from "lucide-react"
+import { useAuth } from "@/hooks/use-auth"
+import * as CONSTANTS from "@/lib/constants"
+import { useToast } from "@/hooks/use-toast"
+import type { SpotifyUser, SpotifyTrack, SpotifyPlaylist } from "@/lib/spotify"
+import { supabase } from "@/lib/supabase"
 
 type TimerMode = "pomodoro" | "shortBreak" | "longBreak"
 
@@ -36,54 +41,6 @@ interface TimerSettings {
   pomodoro: number
   shortBreak: number
   longBreak: number
-}
-
-interface SpotifyUser {
-  id: string
-  display_name: string
-  email: string
-  images: Array<{
-    url: string
-    height: number
-    width: number
-  }>
-  country: string
-  followers: {
-    total: number
-  }
-}
-
-interface SpotifyTrack {
-  id: string
-  name: string
-  artists: Array<{
-    name: string
-  }>
-  album: {
-    name: string
-    images: Array<{
-      url: string
-      height: number
-      width: number
-    }>
-  }
-  duration_ms: number
-  preview_url: string | null
-}
-
-interface SpotifyPlaylist {
-  id: string
-  name: string
-  images: Array<{
-    url: string
-    height: number
-    width: number
-  }>
-  tracks: {
-    items: Array<{
-      track: SpotifyTrack
-    }>
-  }
 }
 
 interface LeaderboardUser {
@@ -98,175 +55,78 @@ interface LeaderboardUser {
 }
 
 const defaultSettings: TimerSettings = {
-  pomodoro: 25 * 60,
-  shortBreak: 5 * 60,
-  longBreak: 15 * 60,
+  pomodoro: CONSTANTS.TIMER_DEFAULTS.POMODORO_MINUTES * 60,
+  shortBreak: CONSTANTS.TIMER_DEFAULTS.SHORT_BREAK_MINUTES * 60,
+  longBreak: CONSTANTS.TIMER_DEFAULTS.LONG_BREAK_MINUTES * 60,
 }
 
 const modeConfig = {
   pomodoro: {
     label: "Focus Time",
     icon: Brain,
-    color: "from-emerald-400 to-teal-500",
-    bgColor: "bg-emerald-50",
-    textColor: "text-emerald-700",
+    color: CONSTANTS.THEME_COLORS.POMODORO.primary,
+    bgColor: CONSTANTS.THEME_COLORS.POMODORO.background,
+    textColor: CONSTANTS.THEME_COLORS.POMODORO.text,
   },
   shortBreak: {
     label: "Short Break",
     icon: Coffee,
-    color: "from-amber-400 to-orange-500",
-    bgColor: "bg-amber-50",
-    textColor: "text-amber-700",
+    color: CONSTANTS.THEME_COLORS.SHORT_BREAK.primary,
+    bgColor: CONSTANTS.THEME_COLORS.SHORT_BREAK.background,
+    textColor: CONSTANTS.THEME_COLORS.SHORT_BREAK.text,
   },
   longBreak: {
     label: "Long Break",
     icon: Timer,
-    color: "from-blue-400 to-indigo-500",
-    bgColor: "bg-blue-50",
-    textColor: "text-blue-700",
+    color: CONSTANTS.THEME_COLORS.LONG_BREAK.primary,
+    bgColor: CONSTANTS.THEME_COLORS.LONG_BREAK.background,
+    textColor: CONSTANTS.THEME_COLORS.LONG_BREAK.text,
   },
 }
 
-// Mock Spotify data for demo
-const mockSpotifyPlaylists: SpotifyPlaylist[] = [
-  {
-    id: "1",
-    name: "Lofi Hip Hop Beats",
-    images: [{ url: "/placeholder.svg?height=300&width=300", height: 300, width: 300 }],
-    tracks: {
-      items: [
-        {
-          track: {
-            id: "1",
-            name: "Midnight Study",
-            artists: [{ name: "Chillhop Music" }],
-            album: {
-              name: "Focus Beats",
-              images: [{ url: "/placeholder.svg?height=300&width=300", height: 300, width: 300 }]
-            },
-            duration_ms: 180000,
-            preview_url: null
-          }
-        },
-        {
-          track: {
-            id: "2",
-            name: "Coffee Break",
-            artists: [{ name: "Lo-Fi Cafe" }],
-            album: {
-              name: "Study Vibes",
-              images: [{ url: "/placeholder.svg?height=300&width=300", height: 300, width: 300 }]
-            },
-            duration_ms: 200000,
-            preview_url: null
-          }
-        }
-      ]
-    }
-  },
-  {
-    id: "2",
-    name: "Deep Focus",
-    images: [{ url: "/placeholder.svg?height=300&width=300", height: 300, width: 300 }],
-    tracks: {
-      items: [
-        {
-          track: {
-            id: "3",
-            name: "Flow State",
-            artists: [{ name: "Brain.fm" }],
-            album: {
-              name: "Productivity",
-              images: [{ url: "/placeholder.svg?height=300&width=300", height: 300, width: 300 }]
-            },
-            duration_ms: 300000,
-            preview_url: null
-          }
-        }
-      ]
-    }
-  }
-]
-
-// Mock Leaderboard data
-const mockLeaderboard: LeaderboardUser[] = [
-  {
-    id: "1",
-    name: "Alex Chen",
-    avatar: "/placeholder.svg?height=40&width=40",
-    sessionsCompleted: 156,
-    totalFocusTime: 3900,
-    currentStreak: 12,
-    level: 8,
-    badge: "🔥",
-  },
-  {
-    id: "2",
-    name: "Sarah Johnson",
-    avatar: "/placeholder.svg?height=40&width=40",
-    sessionsCompleted: 142,
-    totalFocusTime: 3550,
-    currentStreak: 8,
-    level: 7,
-    badge: "⚡",
-  },
-  {
-    id: "3",
-    name: "Marco Rossi",
-    avatar: "/placeholder.svg?height=40&width=40",
-    sessionsCompleted: 128,
-    totalFocusTime: 3200,
-    currentStreak: 15,
-    level: 7,
-    badge: "🎯",
-  },
-  {
-    id: "4",
-    name: "Emma Wilson",
-    avatar: "/placeholder.svg?height=40&width=40",
-    sessionsCompleted: 98,
-    totalFocusTime: 2450,
-    currentStreak: 5,
-    level: 6,
-    badge: "💎",
-  },
-  {
-    id: "5",
-    name: "You",
-    avatar: "/placeholder.svg?height=40&width=40",
-    sessionsCompleted: 0,
-    totalFocusTime: 0,
-    currentStreak: 0,
-    level: 1,
-    badge: "🌱",
-  },
-]
-
 export default function PomodoroApp() {
+  const { user, isAuthenticated, loading, signOut, refreshSpotifyToken, getValidSpotifyToken } = useAuth()
+  const { toast } = useToast()
   const [mode, setMode] = useState<TimerMode>("pomodoro")
   const [timeLeft, setTimeLeft] = useState(defaultSettings.pomodoro)
   const [isRunning, setIsRunning] = useState(false)
   const [settings, setSettings] = useState(defaultSettings)
-  const [sessions, setSessions] = useState(0)
-  const [totalFocusTime, setTotalFocusTime] = useState(0)
-  const [currentStreak, setCurrentStreak] = useState(0)
+  const [sessions, setSessions] = useState(user?.sessions_completed || 0)
+  const [totalFocusTime, setTotalFocusTime] = useState(user?.total_focus_time || 0)
+  const [currentStreak, setCurrentStreak] = useState(user?.current_streak || 0)
+  const [level, setLevel] = useState(user?.level || 1)
+  const [badge, setBadge] = useState(user?.badge || '🌱')
+  const [spotifyConnected, setSpotifyConnected] = useState(!!user?.spotify_id)
+  const [spotifyUser, setSpotifyUser] = useState<SpotifyUser | null>(null)
+  const [currentPlaylist, setCurrentPlaylist] = useState<SpotifyPlaylist | null>(null)
+  const [currentTrack, setCurrentTrack] = useState<SpotifyTrack | null>(null)
   const [isPlaying, setIsPlaying] = useState(false)
-  const [volume, setVolume] = useState([0.5])
+  const [volume, setVolume] = useState<number>(CONSTANTS.AUDIO_CONFIG.DEFAULT_VOLUME)
+  const [isMuted, setIsMuted] = useState(false)
   const [showSettings, setShowSettings] = useState(false)
   const [showLeaderboard, setShowLeaderboard] = useState(false)
-
-  // Spotify state
-  const [isSpotifyConnected, setIsSpotifyConnected] = useState(false)
-  const [spotifyUser, setSpotifyUser] = useState<SpotifyUser | null>(null)
-  const [currentTrack, setCurrentTrack] = useState<SpotifyTrack | null>(null)
-  const [currentPlaylist, setCurrentPlaylist] = useState<SpotifyPlaylist | null>(null)
-  const [trackProgress, setTrackProgress] = useState(0)
-  const [playlists, setPlaylists] = useState<SpotifyPlaylist[]>([])
+  const [leaderboard, setLeaderboard] = useState<LeaderboardUser[]>([])
+  const timerRef = useRef<NodeJS.Timeout | null>(null)
+  const audioRef = useRef<HTMLAudioElement>(null)
+  const router = useRouter()
 
   const intervalRef = useRef<NodeJS.Timeout | null>(null)
   const canvasRef = useRef<HTMLCanvasElement | null>(null)
-  const audioRef = useRef<HTMLAudioElement | null>(null)
-  const router = useRouter()
+  const trackProgressRef = useRef<number>(0)
+
+  const [spotifyPlaylists, setSpotifyPlaylists] = useState<SpotifyPlaylist[]>([])
+
+  useEffect(() => {
+    if (user) {
+      const userLevel = user.level || 1
+      setSessions(user.sessions_completed)
+      setTotalFocusTime(user.total_focus_time)
+      setCurrentStreak(user.current_streak)
+      setLevel(userLevel)
+      setBadge(user.badge || CONSTANTS.getBadgeForLevel(userLevel))
+      setSpotifyConnected(!!user.spotify_id)
+    }
+  }, [user])
 
   // Timer settings update function
   const updateTimerSettings = (newSettings: TimerSettings) => {
@@ -277,33 +137,14 @@ export default function PomodoroApp() {
     }
   }
 
-  // Check Spotify connection on mount
-  useEffect(() => {
-    const checkSpotifyConnection = () => {
-      const isConnected = localStorage.getItem('spotify_connected') === 'true'
-      const userData = localStorage.getItem('spotify_user')
-      
-      if (isConnected && userData) {
-        setIsSpotifyConnected(true)
-        setSpotifyUser(JSON.parse(userData))
-        setPlaylists(mockSpotifyPlaylists)
-        setCurrentPlaylist(mockSpotifyPlaylists[0])
-        setCurrentTrack(mockSpotifyPlaylists[0].tracks.items[0].track)
-      }
-    }
-
-    checkSpotifyConnection()
-  }, [])
-
   // Initialize audio (default lofi or Spotify)
   useEffect(() => {
-    if (!isSpotifyConnected) {
+    if (!spotifyConnected) {
       // Load default lofi MP3
       audioRef.current = new Audio()
       audioRef.current.loop = true
-      audioRef.current.volume = volume[0]
-      // In produzione, metti qui il path del tuo file MP3 lofi
-      audioRef.current.src = "/lofi-background.mp3" // File MP3 da aggiungere alla cartella public
+      audioRef.current.volume = CONSTANTS.AUDIO_CONFIG.DEFAULT_VOLUME
+      audioRef.current.src = CONSTANTS.AUDIO_CONFIG.LOFI_TRACK_URL
     }
 
     return () => {
@@ -312,46 +153,43 @@ export default function PomodoroApp() {
         audioRef.current = null
       }
     }
-  }, [isSpotifyConnected])
+  }, [spotifyConnected])
 
   // Update audio volume
   useEffect(() => {
     if (audioRef.current) {
-      audioRef.current.volume = volume[0]
+      audioRef.current.volume = volume
     }
   }, [volume])
 
   // Track progress simulation for Spotify
   useEffect(() => {
-    if (isPlaying && currentTrack && isSpotifyConnected) {
+    if (isPlaying && currentTrack && spotifyConnected) {
       const progressInterval = setInterval(() => {
-        setTrackProgress((prev) => {
-          if (prev >= currentTrack.duration_ms / 1000) {
-            // Auto next track
-            nextTrack()
-            return 0
-          }
-          return prev + 1
-        })
+        trackProgressRef.current = (trackProgressRef.current + 1) % (currentTrack.duration_ms / 1000)
       }, 1000)
 
       return () => clearInterval(progressInterval)
     }
-  }, [isPlaying, currentTrack, isSpotifyConnected])
+  }, [isPlaying, currentTrack, spotifyConnected])
 
-  const goToSpotifyLogin = () => {
-    router.push('/spotify-login')
+  const goToSpotifyLogin = async () => {
+    await supabase.auth.signInWithOAuth({
+      provider: 'spotify',
+      options: {
+        redirectTo: typeof window !== 'undefined' ? window.location.origin + '/auth/callback' : '/auth/callback'
+      }
+    })
   }
 
   const disconnectSpotify = () => {
     localStorage.removeItem('spotify_connected')
     localStorage.removeItem('spotify_user')
     localStorage.removeItem('spotify_access_token')
-    setIsSpotifyConnected(false)
+    setSpotifyConnected(false)
     setSpotifyUser(null)
     setCurrentTrack(null)
     setCurrentPlaylist(null)
-    setPlaylists([])
     setIsPlaying(false)
     
     // Reload default audio
@@ -364,8 +202,8 @@ export default function PomodoroApp() {
     setTimeout(() => {
       audioRef.current = new Audio()
       audioRef.current.loop = true
-      audioRef.current.volume = volume[0]
-      audioRef.current.src = "/lofi-background.mp3"
+      audioRef.current.volume = CONSTANTS.AUDIO_CONFIG.DEFAULT_VOLUME
+      audioRef.current.src = CONSTANTS.AUDIO_CONFIG.LOFI_TRACK_URL
     }, 100)
   }
 
@@ -373,13 +211,13 @@ export default function PomodoroApp() {
     setCurrentPlaylist(playlist)
     if (playlist.tracks.items.length > 0) {
       setCurrentTrack(playlist.tracks.items[0].track)
-      setTrackProgress(0)
+      trackProgressRef.current = 0
     }
   }
 
   const playTrack = (track: SpotifyTrack) => {
     setCurrentTrack(track)
-    setTrackProgress(0)
+    trackProgressRef.current = 0
     setIsPlaying(true)
   }
 
@@ -394,7 +232,7 @@ export default function PomodoroApp() {
     const nextTrack = currentPlaylist.tracks.items[nextIndex].track
     
     setCurrentTrack(nextTrack)
-    setTrackProgress(0)
+    trackProgressRef.current = 0
   }
 
   const prevTrack = () => {
@@ -410,7 +248,7 @@ export default function PomodoroApp() {
     const prevTrack = currentPlaylist.tracks.items[prevIndex].track
     
     setCurrentTrack(prevTrack)
-    setTrackProgress(0)
+    trackProgressRef.current = 0
   }
 
   // Timer logic
@@ -440,25 +278,51 @@ export default function PomodoroApp() {
     }
   }, [isRunning, timeLeft])
 
-  const handleTimerComplete = () => {
+  const handleTimerComplete = async () => {
     if (mode === "pomodoro") {
-      setSessions((prev) => prev + 1)
-      setTotalFocusTime((prev) => prev + 25)
-      setCurrentStreak((prev) => prev + 1)
+      const newSessions = sessions + 1
+      const newTotalFocusTime = totalFocusTime + CONSTANTS.TIMER_DEFAULTS.POMODORO_MINUTES
+      const newLevel = CONSTANTS.calculateLevel(newSessions)
+      const newBadge = CONSTANTS.getBadgeForLevel(newLevel)
 
-      const nextMode = sessions > 0 && (sessions + 1) % 4 === 0 ? "longBreak" : "shortBreak"
-      setMode(nextMode)
-      setTimeLeft(settings[nextMode])
+      setSessions(newSessions)
+      setTotalFocusTime(newTotalFocusTime)
+      setLevel(newLevel)
+      setBadge(newBadge)
+
+      // Aggiorna il profilo utente nel database
+      if (user) {
+        try {
+          // Qui dovresti chiamare una funzione per aggiornare il profilo nel database
+          // updateUserProfile({ sessions_completed: newSessions, total_focus_time: newTotalFocusTime, level: newLevel, badge: newBadge })
+          toast({
+            title: CONSTANTS.SUCCESS_MESSAGES.SESSION_SAVED,
+            description: `Hai completato ${newSessions} sessioni!`,
+          })
+        } catch (error) {
+          console.error('Error updating user profile:', error)
+          toast({
+            title: CONSTANTS.ERROR_MESSAGES.SAVE_SESSION_FAILED,
+            variant: "destructive",
+          })
+        }
+      }
+
+      if (newSessions % CONSTANTS.TIMER_DEFAULTS.LONG_BREAK_INTERVAL === 0) {
+        setMode("longBreak")
+        setTimeLeft(settings.longBreak)
+      } else {
+        setMode("shortBreak")
+        setTimeLeft(settings.shortBreak)
+      }
     } else {
       setMode("pomodoro")
       setTimeLeft(settings.pomodoro)
     }
 
-    if ("Notification" in window && Notification.permission === "granted") {
-      new Notification("Pomodoro Timer", {
-        body: mode === "pomodoro" ? "Time for a break!" : "Time to focus!",
-        icon: "/placeholder.svg?height=64&width=64",
-      })
+    setIsRunning(false)
+    if (audioRef.current) {
+      audioRef.current.play()
     }
   }
 
@@ -478,26 +342,36 @@ export default function PomodoroApp() {
   }
 
   const toggleMusic = async () => {
-    if (isSpotifyConnected) {
-      // Gestione Spotify (simulata)
-      setIsPlaying(!isPlaying)
-    } else {
-      // Gestione audio di default
-      if (!audioRef.current) return
+    if (!isAuthenticated) {
+      toast({
+        title: CONSTANTS.ERROR_MESSAGES.AUTH_FAILED,
+        description: "Devi effettuare il login per utilizzare Spotify",
+        variant: "destructive",
+      })
+      return
+    }
 
-      try {
-        if (isPlaying) {
-          audioRef.current.pause()
-          setIsPlaying(false)
-        } else {
-          await audioRef.current.play()
-          setIsPlaying(true)
-        }
-      } catch (error) {
-        console.error("Error playing audio:", error)
-        // Fallback: gestione solo tramite stato
-        setIsPlaying(!isPlaying)
+    if (!spotifyConnected) {
+      // Reindirizza alla pagina di login Spotify
+      window.location.href = "/spotify-login"
+      return
+    }
+
+    try {
+      const token = await getValidSpotifyToken()
+      if (!token) {
+        throw new Error("No valid Spotify token")
       }
+
+      // Qui dovresti implementare la logica per controllare lo stato di riproduzione
+      // e gestire la riproduzione/pausa della musica
+      setIsPlaying(!isPlaying)
+    } catch (error) {
+      console.error('Error toggling music:', error)
+      toast({
+        title: CONSTANTS.ERROR_MESSAGES.SPOTIFY_CONNECTION_FAILED,
+        variant: "destructive",
+      })
     }
   }
 
@@ -520,7 +394,7 @@ export default function PomodoroApp() {
 
   const getTrackProgress = () => {
     if (!currentTrack) return 0
-    return (trackProgress / (currentTrack.duration_ms / 1000)) * 100
+    return (trackProgressRef.current / (currentTrack.duration_ms / 1000)) * 100
   }
 
   const getArtistNames = (track: SpotifyTrack) => {
@@ -528,12 +402,12 @@ export default function PomodoroApp() {
   }
 
   const getUserLevel = () => {
-    return Math.floor(sessions / 10) + 1
+    return CONSTANTS.calculateLevel(sessions)
   }
 
   const getRankPosition = () => {
     const userStats = { sessionsCompleted: sessions, totalFocusTime }
-    const sortedLeaderboard = [...mockLeaderboard].sort((a, b) => b.sessionsCompleted - a.sessionsCompleted)
+    const sortedLeaderboard = [...leaderboard].sort((a, b) => b.sessionsCompleted - a.sessionsCompleted)
     return sortedLeaderboard.findIndex((user) => user.name === "You") + 1
   }
 
@@ -625,6 +499,51 @@ export default function PomodoroApp() {
 
   const currentConfig = modeConfig[mode]
 
+  useEffect(() => {
+    if (spotifyConnected && user) {
+      // Carica le playlist dall'API Spotify
+      fetchSpotifyPlaylists()
+    }
+  }, [spotifyConnected, user])
+
+  const fetchSpotifyPlaylists = async () => {
+    try {
+      const token = await getValidSpotifyToken()
+      if (!token) {
+        throw new Error("No valid Spotify token")
+      }
+
+      const response = await fetch('/api/spotify/playlists', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${token}`,
+        },
+      })
+
+      if (!response.ok) {
+        throw new Error("Failed to fetch Spotify playlists")
+      }
+
+      const data = await response.json()
+      setSpotifyPlaylists(data)
+    } catch (error) {
+      console.error('Error fetching Spotify playlists:', error)
+      toast({
+        title: CONSTANTS.ERROR_MESSAGES.FETCH_PLAYLISTS_FAILED,
+        variant: "destructive",
+      })
+    }
+  }
+
+  if (loading) {
+    return (
+      <div className="flex items-center justify-center min-h-screen">
+        <div className="animate-spin rounded-full h-32 w-32 border-b-2 border-gray-900"></div>
+      </div>
+    )
+  }
+
   return (
     <div className={`min-h-screen transition-all duration-500 ${currentConfig.bgColor}`}>
       <div className="container mx-auto px-4 py-8 max-w-6xl">
@@ -637,22 +556,22 @@ export default function PomodoroApp() {
 
           <div className="flex gap-3 items-center">
             {/* Spotify User Avatar */}
-            {isSpotifyConnected && spotifyUser && (
-              <div className="flex items-center gap-2 bg-white rounded-2xl px-4 py-2 shadow-lg">
-                <Avatar className="w-8 h-8">
-                  <AvatarImage 
-                    src={spotifyUser.images[0]?.url || "/placeholder-user.jpg"} 
-                    alt={spotifyUser.display_name}
-                  />
-                  <AvatarFallback>
-                    {spotifyUser.display_name.split(" ").map(n => n[0]).join("")}
-                  </AvatarFallback>
-                </Avatar>
-                <span className="text-sm font-medium text-slate-700">
-                  {spotifyUser.display_name}
-                </span>
-                <div className="w-2 h-2 bg-green-500 rounded-full"></div>
-              </div>
+            {(user && !spotifyConnected) && (
+              <Avatar
+                className="w-8 h-8 cursor-pointer"
+                onClick={() => {
+                  if (!isAuthenticated) {
+                    window.location.href = "/auth/login"
+                  } else {
+                    // Qui puoi aprire il menu profilo o altro
+                  }
+                }}
+              >
+                <AvatarImage src={user?.avatar_url || "/placeholder-user.jpg"} alt={user?.display_name || "Profilo"} />
+                <AvatarFallback>
+                  {user?.display_name?.split(" ").map(n => n[0]).join("") || "?"}
+                </AvatarFallback>
+              </Avatar>
             )}
 
             <Dialog open={showLeaderboard} onOpenChange={setShowLeaderboard}>
@@ -674,7 +593,7 @@ export default function PomodoroApp() {
                 </DialogHeader>
                 
                 <div className="space-y-4">
-                  {mockLeaderboard.map((user, index) => {
+                  {leaderboard.map((user, index) => {
                     const isCurrentUser = user.name === "You"
                     const updatedUser = isCurrentUser
                       ? {
@@ -683,6 +602,7 @@ export default function PomodoroApp() {
                           totalFocusTime,
                           currentStreak,
                           level: getUserLevel(),
+                          badge: CONSTANTS.getBadgeForLevel(getUserLevel()),
                         }
                       : user
 
@@ -704,18 +624,10 @@ export default function PomodoroApp() {
                                   ? "bg-gray-100 text-gray-700"
                                   : index === 2
                                     ? "bg-orange-100 text-orange-700"
-                                    : "bg-slate-100 text-slate-700"
+                                    : "bg-slate-200 text-slate-700"
                             }`}
                           >
-                            {index === 0 ? (
-                              <Crown className="w-4 h-4" />
-                            ) : index === 1 ? (
-                              <Medal className="w-4 h-4" />
-                            ) : index === 2 ? (
-                              <Star className="w-4 h-4" />
-                            ) : (
-                              index + 1
-                            )}
+                            {updatedUser.badge}
                           </div>
                           <Avatar>
                             <AvatarImage src={user.avatar || "/placeholder.svg"} />
@@ -731,7 +643,6 @@ export default function PomodoroApp() {
                         <div className="flex-1">
                           <div className="flex items-center gap-2">
                             <h4 className={`font-medium ${isCurrentUser ? "text-blue-700" : ""}`}>{user.name}</h4>
-                            <span className="text-lg">{updatedUser.badge}</span>
                             <Badge variant="secondary" className="text-xs">
                               Level {updatedUser.level}
                             </Badge>
@@ -810,7 +721,7 @@ export default function PomodoroApp() {
                       </CardTitle>
                     </CardHeader>
                     <CardContent>
-                      {isSpotifyConnected ? (
+                      {spotifyConnected ? (
                         <div className="space-y-4">
                           <div className="flex items-center justify-between p-4 bg-green-50 rounded-lg border border-green-200">
                             <div className="flex items-center gap-3">
@@ -818,7 +729,7 @@ export default function PomodoroApp() {
                               <div>
                                 <p className="font-medium text-green-800">Connesso a Spotify</p>
                                 <p className="text-sm text-green-600">
-                                  {spotifyUser?.display_name} • {playlists.length} playlist disponibili
+                                  {spotifyUser?.display_name} • {leaderboard.length} playlist disponibili
                                 </p>
                               </div>
                             </div>
@@ -837,7 +748,7 @@ export default function PomodoroApp() {
                           <div>
                             <label className="block text-sm font-medium mb-2">Seleziona Playlist</label>
                             <div className="grid grid-cols-1 gap-2 max-h-40 overflow-y-auto">
-                              {playlists.map((playlist) => (
+                              {spotifyPlaylists.map((playlist) => (
                                 <div
                                   key={playlist.id}
                                   onClick={() => selectPlaylist(playlist)}
@@ -938,7 +849,11 @@ export default function PomodoroApp() {
                       </div>
                       <div className="flex gap-2">
                         <Button 
-                          onClick={() => updateTimerSettings(defaultSettings)} 
+                          onClick={() => updateTimerSettings({
+                            pomodoro: CONSTANTS.TIMER_DEFAULTS.POMODORO_MINUTES * 60,
+                            shortBreak: CONSTANTS.TIMER_DEFAULTS.SHORT_BREAK_MINUTES * 60,
+                            longBreak: CONSTANTS.TIMER_DEFAULTS.LONG_BREAK_MINUTES * 60
+                          })} 
                           variant="outline" 
                           size="sm"
                         >
@@ -961,7 +876,14 @@ export default function PomodoroApp() {
                         <label className="block text-sm font-medium mb-2">Background Music Volume</label>
                         <div className="flex items-center gap-3">
                           <VolumeX className="w-4 h-4 text-slate-500" />
-                          <Slider value={volume} onValueChange={setVolume} max={1} step={0.1} className="flex-1" />
+                          <Slider
+                            value={[volume]}
+                            onValueChange={(value) => setVolume(value[0])}
+                            min={0}
+                            max={1}
+                            step={0.1}
+                            className="w-full"
+                          />
                           <Volume2 className="w-4 h-4 text-slate-500" />
                         </div>
                       </div>
@@ -1072,7 +994,7 @@ export default function PomodoroApp() {
         {/* Music Player */}
         <Card className="mb-8 rounded-2xl shadow-lg bg-white/80 backdrop-blur-sm">
           <CardContent className="p-6">
-            {isSpotifyConnected && currentTrack ? (
+            {spotifyConnected && currentTrack ? (
               /* Spotify Player */
               <div className="space-y-4">
                 <div className="flex items-center justify-between">
@@ -1110,7 +1032,7 @@ export default function PomodoroApp() {
                     {/* Progress Bar */}
                     <div className="flex items-center gap-2 mt-2">
                       <span className="text-xs text-slate-500">
-                        {formatTime(trackProgress)}
+                        {formatTime(trackProgressRef.current)}
                       </span>
                       <div className="flex-1 bg-slate-200 rounded-full h-1">
                         <div
@@ -1128,9 +1050,16 @@ export default function PomodoroApp() {
                 {/* Volume Control */}
                 <div className="flex items-center gap-3">
                   <VolumeX className="w-4 h-4 text-slate-500" />
-                  <Slider value={volume} onValueChange={setVolume} max={1} step={0.1} className="flex-1" />
+                  <Slider
+                    value={[volume]}
+                    onValueChange={(value) => setVolume(value[0])}
+                    min={0}
+                    max={1}
+                    step={0.1}
+                    className="flex-1"
+                  />
                   <Volume2 className="w-4 h-4 text-slate-500" />
-                  <span className="text-sm text-slate-600 w-12">{Math.round(volume[0] * 100)}%</span>
+                  <span className="text-sm text-slate-600 w-12">{Math.round(volume * 100)}%</span>
                 </div>
               </div>
             ) : (
@@ -1163,9 +1092,16 @@ export default function PomodoroApp() {
                 {/* Volume Control */}
                 <div className="flex items-center gap-3">
                   <VolumeX className="w-4 h-4 text-slate-500" />
-                  <Slider value={volume} onValueChange={setVolume} max={1} step={0.1} className="flex-1" />
+                  <Slider
+                    value={[volume]}
+                    onValueChange={(value) => setVolume(value[0])}
+                    min={0}
+                    max={1}
+                    step={0.1}
+                    className="flex-1"
+                  />
                   <Volume2 className="w-4 h-4 text-slate-500" />
-                  <span className="text-sm text-slate-600 w-12">{Math.round(volume[0] * 100)}%</span>
+                  <span className="text-sm text-slate-600 w-12">{Math.round(volume * 100)}%</span>
                 </div>
 
                 <div className="text-center">

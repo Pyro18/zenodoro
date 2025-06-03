@@ -22,8 +22,10 @@ export interface Database {
                     total_focus_time: number
                     sessions_completed: number
                     current_streak: number
+                    max_streak: number
                     level: number
                     badge: string | null
+                    last_session_date: string | null
                     created_at: string
                     updated_at: string
                 }
@@ -39,8 +41,10 @@ export interface Database {
                     total_focus_time?: number
                     sessions_completed?: number
                     current_streak?: number
+                    max_streak?: number
                     level?: number
                     badge?: string | null
+                    last_session_date?: string | null
                     created_at?: string
                     updated_at?: string
                 }
@@ -56,8 +60,10 @@ export interface Database {
                     total_focus_time?: number
                     sessions_completed?: number
                     current_streak?: number
+                    max_streak?: number
                     level?: number
                     badge?: string | null
+                    last_session_date?: string | null
                     created_at?: string
                     updated_at?: string
                 }
@@ -88,11 +94,172 @@ export interface Database {
                     created_at?: string
                 }
             }
+            user_settings: {
+                Row: {
+                    id: string
+                    user_id: string
+                    pomodoro_duration: number
+                    short_break_duration: number
+                    long_break_duration: number
+                    auto_start_breaks: boolean
+                    auto_start_pomodoros: boolean
+                    long_break_interval: number
+                    daily_goal: number
+                    notifications_enabled: boolean
+                    sound_enabled: boolean
+                    volume: number
+                    created_at: string
+                    updated_at: string
+                }
+                Insert: {
+                    id?: string
+                    user_id: string
+                    pomodoro_duration?: number
+                    short_break_duration?: number
+                    long_break_duration?: number
+                    auto_start_breaks?: boolean
+                    auto_start_pomodoros?: boolean
+                    long_break_interval?: number
+                    daily_goal?: number
+                    notifications_enabled?: boolean
+                    sound_enabled?: boolean
+                    volume?: number
+                    created_at?: string
+                    updated_at?: string
+                }
+                Update: {
+                    id?: string
+                    user_id?: string
+                    pomodoro_duration?: number
+                    short_break_duration?: number
+                    long_break_duration?: number
+                    auto_start_breaks?: boolean
+                    auto_start_pomodoros?: boolean
+                    long_break_interval?: number
+                    daily_goal?: number
+                    notifications_enabled?: boolean
+                    sound_enabled?: boolean
+                    volume?: number
+                    created_at?: string
+                    updated_at?: string
+                }
+            }
+            spotify_playlists: {
+                Row: {
+                    id: string
+                    user_id: string
+                    spotify_playlist_id: string
+                    name: string
+                    description: string | null
+                    image_url: string | null
+                    track_count: number
+                    is_favorite: boolean
+                    last_synced: string
+                    created_at: string
+                }
+                Insert: {
+                    id?: string
+                    user_id: string
+                    spotify_playlist_id: string
+                    name: string
+                    description?: string | null
+                    image_url?: string | null
+                    track_count?: number
+                    is_favorite?: boolean
+                    last_synced?: string
+                    created_at?: string
+                }
+                Update: {
+                    id?: string
+                    user_id?: string
+                    spotify_playlist_id?: string
+                    name?: string
+                    description?: string | null
+                    image_url?: string | null
+                    track_count?: number
+                    is_favorite?: boolean
+                    last_synced?: string
+                    created_at?: string
+                }
+            }
+            achievements: {
+                Row: {
+                    id: string
+                    user_id: string
+                    achievement_type: string
+                    achievement_name: string
+                    description: string | null
+                    icon: string | null
+                    earned_at: string
+                }
+                Insert: {
+                    id?: string
+                    user_id: string
+                    achievement_type: string
+                    achievement_name: string
+                    description?: string | null
+                    icon?: string | null
+                    earned_at?: string
+                }
+                Update: {
+                    id?: string
+                    user_id?: string
+                    achievement_type?: string
+                    achievement_name?: string
+                    description?: string | null
+                    icon?: string | null
+                    earned_at?: string
+                }
+            }
         }
     }
 }
 
-// Helper functions for database operations
+// Auth helper functions
+export const signInWithSpotify = async () => {
+    const { data, error } = await supabase.auth.signInWithOAuth({
+        provider: 'spotify',
+        options: {
+            scopes: 'user-read-private user-read-email playlist-read-private playlist-read-collaborative user-read-playback-state user-modify-playback-state user-read-currently-playing streaming',
+            redirectTo: `${window.location.origin}/auth/callback`
+        }
+    })
+
+    if (error) {
+        console.error('Spotify login error:', error)
+        throw error
+    }
+
+    return data
+}
+
+export const signOut = async () => {
+    const { error } = await supabase.auth.signOut()
+    if (error) {
+        console.error('Sign out error:', error)
+        throw error
+    }
+}
+
+export const getCurrentUser = async () => {
+    const { data: { user }, error } = await supabase.auth.getUser()
+    if (error) {
+        console.error('Get user error:', error)
+        return null
+    }
+    return user
+}
+
+export const getCurrentSession = async () => {
+    const { data: { session }, error } = await supabase.auth.getSession()
+    if (error) {
+        console.error('Get session error:', error)
+        return null
+    }
+    return session
+}
+
+// Database helper functions
 export const getUserProfile = async (userId: string) => {
     const { data, error } = await supabase
         .from('users')
@@ -108,31 +275,86 @@ export const getUserProfile = async (userId: string) => {
     return data
 }
 
-export const updateUserProfile = async (userId: string, updates: Database['public']['Tables']['users']['Update']) => {
+export const createOrUpdateUserProfile = async (
+    userId: string, 
+    spotifyData: any,
+    tokens: { access_token: string; refresh_token?: string }
+) => {
+    const userProfile = {
+        id: userId,
+        spotify_id: spotifyData.id,
+        display_name: spotifyData.display_name,
+        email: spotifyData.email,
+        avatar_url: spotifyData.images?.[0]?.url || null,
+        country: spotifyData.country,
+        spotify_access_token: tokens.access_token,
+        spotify_refresh_token: tokens.refresh_token || null,
+    }
+
     const { data, error } = await supabase
         .from('users')
-        .update({ ...updates, updated_at: new Date().toISOString() })
-        .eq('id', userId)
+        .upsert([userProfile], { onConflict: 'id' })
         .select()
         .single()
 
     if (error) {
-        console.error('Error updating user profile:', error)
+        console.error('Error creating/updating user profile:', error)
         throw error
+    }
+
+    // Create default user settings if not exists
+    await createDefaultUserSettings(userId)
+
+    return data
+}
+
+export const createDefaultUserSettings = async (userId: string) => {
+    const { error } = await supabase
+        .from('user_settings')
+        .upsert([{
+            user_id: userId,
+            pomodoro_duration: 25,
+            short_break_duration: 5,
+            long_break_duration: 15,
+            auto_start_breaks: false,
+            auto_start_pomodoros: false,
+            long_break_interval: 4,
+            daily_goal: 8,
+            notifications_enabled: true,
+            sound_enabled: true,
+            volume: 0.5
+        }], { onConflict: 'user_id' })
+
+    if (error && error.code !== '23505') { // Ignore unique constraint violations
+        console.error('Error creating default user settings:', error)
+    }
+}
+
+export const getUserSettings = async (userId: string) => {
+    const { data, error } = await supabase
+        .from('user_settings')
+        .select('*')
+        .eq('user_id', userId)
+        .single()
+
+    if (error) {
+        console.error('Error fetching user settings:', error)
+        return null
     }
 
     return data
 }
 
-export const createUserProfile = async (profile: Database['public']['Tables']['users']['Insert']) => {
+export const updateUserSettings = async (userId: string, settings: Partial<Database['public']['Tables']['user_settings']['Update']>) => {
     const { data, error } = await supabase
-        .from('users')
-        .insert([profile])
+        .from('user_settings')
+        .update(settings)
+        .eq('user_id', userId)
         .select()
         .single()
 
     if (error) {
-        console.error('Error creating user profile:', error)
+        console.error('Error updating user settings:', error)
         throw error
     }
 
@@ -142,7 +364,7 @@ export const createUserProfile = async (profile: Database['public']['Tables']['u
 export const getLeaderboard = async (limit = 10) => {
     const { data, error } = await supabase
         .from('users')
-        .select('id, display_name, avatar_url, sessions_completed, total_focus_time, current_streak, level, badge')
+        .select('id, display_name, avatar_url, sessions_completed, total_focus_time, current_streak, max_streak, level, badge')
         .order('sessions_completed', { ascending: false })
         .limit(limit)
 
@@ -154,15 +376,129 @@ export const getLeaderboard = async (limit = 10) => {
     return data || []
 }
 
-export const addFocusSession = async (session: Database['public']['Tables']['focus_sessions']['Insert']) => {
+export const addFocusSession = async (userId: string, sessionType: 'pomodoro' | 'short_break' | 'long_break', durationMinutes: number) => {
     const { data, error } = await supabase
         .from('focus_sessions')
-        .insert([session])
+        .insert([{
+            user_id: userId,
+            session_type: sessionType,
+            duration_minutes: durationMinutes
+        }])
         .select()
         .single()
 
     if (error) {
         console.error('Error adding focus session:', error)
+        throw error
+    }
+
+    return data
+}
+
+export const getUserFocusSessions = async (userId: string, limit = 50) => {
+    const { data, error } = await supabase
+        .from('focus_sessions')
+        .select('*')
+        .eq('user_id', userId)
+        .order('completed_at', { ascending: false })
+        .limit(limit)
+
+    if (error) {
+        console.error('Error fetching focus sessions:', error)
+        return []
+    }
+
+    return data || []
+}
+
+export const getTodayStats = async (userId: string) => {
+    const today = new Date().toISOString().split('T')[0]
+    
+    const { data, error } = await supabase
+        .from('focus_sessions')
+        .select('*')
+        .eq('user_id', userId)
+        .gte('completed_at', `${today}T00:00:00`)
+        .lte('completed_at', `${today}T23:59:59`)
+
+    if (error) {
+        console.error('Error fetching today stats:', error)
+        return { pomodoroCount: 0, totalFocusTime: 0, breaks: 0 }
+    }
+
+    const pomodoroSessions = data?.filter(s => s.session_type === 'pomodoro') || []
+    const totalFocusTime = pomodoroSessions.reduce((sum, session) => sum + session.duration_minutes, 0)
+    const breaks = data?.filter(s => s.session_type !== 'pomodoro').length || 0
+
+    return {
+        pomodoroCount: pomodoroSessions.length,
+        totalFocusTime,
+        breaks
+    }
+}
+
+export const syncSpotifyPlaylists = async (userId: string, playlists: any[]) => {
+    // First, clear existing playlists
+    await supabase
+        .from('spotify_playlists')
+        .delete()
+        .eq('user_id', userId)
+
+    // Insert new playlists
+    const playlistData = playlists.map(playlist => ({
+        user_id: userId,
+        spotify_playlist_id: playlist.id,
+        name: playlist.name,
+        description: playlist.description,
+        image_url: playlist.images?.[0]?.url || null,
+        track_count: playlist.tracks?.total || 0,
+        is_favorite: false
+    }))
+
+    const { data, error } = await supabase
+        .from('spotify_playlists')
+        .insert(playlistData)
+        .select()
+
+    if (error) {
+        console.error('Error syncing Spotify playlists:', error)
+        throw error
+    }
+
+    return data
+}
+
+export const getUserPlaylists = async (userId: string) => {
+    const { data, error } = await supabase
+        .from('spotify_playlists')
+        .select('*')
+        .eq('user_id', userId)
+        .order('is_favorite', { ascending: false })
+        .order('name')
+
+    if (error) {
+        console.error('Error fetching user playlists:', error)
+        return []
+    }
+
+    return data || []
+}
+
+export const updateSpotifyTokens = async (userId: string, accessToken: string, refreshToken?: string) => {
+    const updates: any = { spotify_access_token: accessToken }
+    if (refreshToken) {
+        updates.spotify_refresh_token = refreshToken
+    }
+
+    const { data, error } = await supabase
+        .from('users')
+        .update(updates)
+        .eq('id', userId)
+        .select()
+        .single()
+
+    if (error) {
+        console.error('Error updating Spotify tokens:', error)
         throw error
     }
 
