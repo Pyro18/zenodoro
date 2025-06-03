@@ -22,7 +22,7 @@ export const TIMER_LIMITS = {
 
 export const AUDIO_CONFIG = {
     DEFAULT_VOLUME: 0.5,
-    LOFI_TRACK_URL: '/public/lofi-background.mp3',
+    LOFI_TRACK_URL: '/lofi-background.mp3',
     FADE_DURATION: 1000 // ms
 }
 

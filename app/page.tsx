@@ -33,7 +33,6 @@ import { useAuth } from "@/hooks/use-auth"
 import * as CONSTANTS from "@/lib/constants"
 import { useToast } from "@/hooks/use-toast"
 import type { SpotifyUser, SpotifyTrack, SpotifyPlaylist } from "@/lib/spotify"
-import { supabase } from "@/lib/supabase"
 
 type TimerMode = "pomodoro" | "shortBreak" | "longBreak"
 
@@ -173,13 +172,8 @@ export default function PomodoroApp() {
     }
   }, [isPlaying, currentTrack, spotifyConnected])
 
-  const goToSpotifyLogin = async () => {
-    await supabase.auth.signInWithOAuth({
-      provider: 'spotify',
-      options: {
-        redirectTo: typeof window !== 'undefined' ? window.location.origin + '/auth/callback' : '/auth/callback'
-      }
-    })
+  const goToSpotifyLogin = () => {
+    router.push('/auth/login')
   }
 
   const disconnectSpotify = () => {
