@@ -261,18 +261,112 @@ export const getCurrentSession = async () => {
 
 // Database helper functions
 export const getUserProfile = async (userId: string) => {
-    const { data, error } = await supabase
-        .from('users')
-        .select('*')
-        .eq('id', userId)
-        .single()
+    try {
+        console.log('Fetching user profile for:', userId)
+        
+        const { data, error } = await supabase
+            .from('users')
+            .select('*')
+            .eq('id', userId)
+            .maybeSingle()
 
-    if (error && error.code !== 'PGRST116') {
-        console.error('Error fetching user profile:', error)
+        if (error) {
+            console.error('Error fetching user profile:', error)
+            
+            // Se è un errore di policy o permission, prova a creare il profilo
+            if (error.code === '42501' || error.message.includes('permission denied') || error.message.includes('policy')) {
+                console.log('Permission error, attempting to create base profile...')
+                
+                const session = await getCurrentSession()
+                if (session?.user && session.user.id === userId) {
+                    return await createBasicUserProfile(session.user)
+                }
+            }
+            
+            return null
+        }
+
+        if (data) {
+            console.log('User profile fetched successfully: found')
+            return data
+        } else {
+            console.log('User profile fetched successfully: not found, creating...')
+            
+            // Se il profilo non esiste, prova a crearlo
+            const session = await getCurrentSession()
+            if (session?.user && session.user.id === userId) {
+                return await createBasicUserProfile(session.user)
+            }
+            
+            return null
+        }
+    } catch (error) {
+        console.error('Unexpected error in getUserProfile:', error)
         return null
     }
+}
 
-    return data
+const createBasicUserProfile = async (user: any) => {
+    try {
+        console.log('Creating basic user profile for:', user.id)
+        
+        const basicProfile = {
+            id: user.id,
+            email: user.email,
+            display_name: user.user_metadata?.full_name || user.user_metadata?.name || user.user_metadata?.display_name || null,
+            avatar_url: user.user_metadata?.avatar_url || user.user_metadata?.picture || null,
+            spotify_id: user.user_metadata?.provider_id || user.user_metadata?.sub || null,
+            country: user.user_metadata?.country || null,
+            total_focus_time: 0,
+            sessions_completed: 0,
+            current_streak: 0,
+            max_streak: 0,
+            level: 1,
+            badge: '🌱',
+            created_at: new Date().toISOString(),
+            updated_at: new Date().toISOString()
+        }
+
+        console.log('Creating profile with data:', { ...basicProfile, email: '***' })
+
+        // Prova prima un insert diretto
+        const { data, error } = await supabase
+            .from('users')
+            .insert([basicProfile])
+            .select()
+            .single()
+
+        if (error) {
+            console.error('Error creating basic profile:', error)
+            
+            // Se l'insert fallisce per duplicato, prova un upsert
+            if (error.code === '23505') {
+                console.log('User already exists, trying upsert...')
+                const { data: upsertData, error: upsertError } = await supabase
+                    .from('users')
+                    .upsert([basicProfile], { onConflict: 'id' })
+                    .select()
+                    .single()
+
+                if (upsertError) {
+                    console.error('Upsert also failed:', upsertError)
+                    return null
+                }
+                
+                await createDefaultUserSettings(user.id)
+                return upsertData
+            }
+            
+            return null
+        }
+
+        console.log('Basic profile created successfully')
+        await createDefaultUserSettings(user.id)
+        return data
+    } catch (error) {
+        console.error('Error in createBasicUserProfile:', error)
+        return null
+    }
 }
 
 export const createOrUpdateUserProfileFromSession = async (
@@ -281,6 +375,8 @@ export const createOrUpdateUserProfileFromSession = async (
     const user = session.user
     const spotifyAccessToken = session.provider_token || null
     const spotifyRefreshToken = session.provider_refresh_token || null
+    
+    console.log('Creating/updating user profile for:', user.id)
     
     // Estrai i dati Spotify dall'user metadata
     const spotifyData = {
@@ -300,51 +396,174 @@ export const createOrUpdateUserProfileFromSession = async (
         country: spotifyData.country,
         spotify_access_token: spotifyAccessToken,
         spotify_refresh_token: spotifyRefreshToken,
-        // Aggiungi valori di default per i nuovi utenti
         total_focus_time: 0,
         sessions_completed: 0,
         current_streak: 0,
         max_streak: 0,
         level: 1,
-        badge: '🌱'
+        badge: '🌱',
+        updated_at: new Date().toISOString()
     }
 
-    const { data, error } = await supabase
-        .from('users')
-        .upsert([userProfile], { onConflict: 'id' })
-        .select()
-        .single()
+    console.log('User profile data:', { ...userProfile, spotify_access_token: '***', spotify_refresh_token: '***' })
 
-    if (error) {
-        console.error('Error creating/updating user profile:', error)
+    try {
+        // Prima prova a fare un upsert
+        const { data, error } = await supabase
+            .from('users')
+            .upsert([userProfile], { 
+                onConflict: 'id',
+                ignoreDuplicates: false 
+            })
+            .select()
+            .single()
+
+        if (error) {
+            console.error('Upsert error:', error)
+            
+            // Se l'upsert fallisce, prova prima SELECT poi INSERT/UPDATE
+            const { data: existingUser, error: selectError } = await supabase
+                .from('users')
+                .select('*')
+                .eq('id', user.id)
+                .maybeSingle()
+
+            if (selectError) {
+                console.error('Select error:', selectError)
+                throw selectError
+            }
+
+            if (existingUser) {
+                // Utente esiste, fai UPDATE
+                console.log('User exists, updating...')
+                const { data: updatedData, error: updateError } = await supabase
+                    .from('users')
+                    .update({
+                        spotify_id: userProfile.spotify_id,
+                        display_name: userProfile.display_name,
+                        email: userProfile.email,
+                        avatar_url: userProfile.avatar_url,
+                        country: userProfile.country,
+                        spotify_access_token: userProfile.spotify_access_token,
+                        spotify_refresh_token: userProfile.spotify_refresh_token,
+                        updated_at: userProfile.updated_at
+                    })
+                    .eq('id', user.id)
+                    .select()
+                    .single()
+
+                if (updateError) {
+                    console.error('Update error:', updateError)
+                    throw updateError
+                }
+                
+                await createDefaultUserSettings(user.id)
+                return updatedData
+            } else {
+                // Utente non esiste, fai INSERT
+                console.log('User does not exist, inserting...')
+                const { data: insertedData, error: insertError } = await supabase
+                    .from('users')
+                    .insert([userProfile])
+                    .select()
+                    .single()
+
+                if (insertError) {
+                    console.error('Insert error:', insertError)
+                    throw insertError
+                }
+                
+                await createDefaultUserSettings(user.id)
+                return insertedData
+            }
+        }
+
+        console.log('Upsert successful')
+        await createDefaultUserSettings(user.id)
+        return data
+        
+    } catch (error) {
+        console.error('Error in createOrUpdateUserProfileFromSession:', error)
         throw error
     }
+}
 
-    // Create default user settings if not exists
-    await createDefaultUserSettings(user.id)
+// Funzione per debug - forza la creazione del profilo
+export const ensureUserProfile = async (userId: string) => {
+    try {
+        console.log('Ensuring user profile exists for:', userId)
+        
+        // Prima controlla se esiste
+        const { data: existingProfile } = await supabase
+            .from('users')
+            .select('id')
+            .eq('id', userId)
+            .maybeSingle()
 
-    return data
+        if (existingProfile) {
+            console.log('Profile already exists')
+            return await getUserProfile(userId)
+        }
+
+        // Se non esiste, crea
+        const session = await getCurrentSession()
+        if (session?.user && session.user.id === userId) {
+            console.log('Creating missing profile...')
+            return await createBasicUserProfile(session.user)
+        }
+
+        console.log('Cannot create profile - no session')
+        return null
+    } catch (error) {
+        console.error('Error in ensureUserProfile:', error)
+        return null
+    }
 }
 
 export const createDefaultUserSettings = async (userId: string) => {
-    const { error } = await supabase
-        .from('user_settings')
-        .upsert([{
-            user_id: userId,
-            pomodoro_duration: 25,
-            short_break_duration: 5,
-            long_break_duration: 15,
-            auto_start_breaks: false,
-            auto_start_pomodoros: false,
-            long_break_interval: 4,
-            daily_goal: 8,
-            notifications_enabled: true,
-            sound_enabled: true,
-            volume: 0.5
-        }], { onConflict: 'user_id' })
+    try {
+        // Controlla se le impostazioni esistono già
+        const { data: existingSettings, error: selectError } = await supabase
+            .from('user_settings')
+            .select('id')
+            .eq('user_id', userId)
+            .maybeSingle()
 
-    if (error && error.code !== '23505') { // Ignore unique constraint violations
-        console.error('Error creating default user settings:', error)
+        if (selectError && selectError.code !== 'PGRST116') {
+            console.error('Error checking existing settings:', selectError)
+            return
+        }
+
+        if (existingSettings) {
+            console.log('User settings already exist')
+            return
+        }
+
+        console.log('Creating default user settings for:', userId)
+        
+        const { error } = await supabase
+            .from('user_settings')
+            .insert([{
+                user_id: userId,
+                pomodoro_duration: 25,
+                short_break_duration: 5,
+                long_break_duration: 15,
+                auto_start_breaks: false,
+                auto_start_pomodoros: false,
+                long_break_interval: 4,
+                daily_goal: 8,
+                notifications_enabled: true,
+                sound_enabled: true,
+                volume: 0.5
+            }])
+
+        if (error && error.code !== '23505') { // Ignore unique constraint violations
+            console.error('Error creating default user settings:', error)
+        } else {
+            console.log('Default user settings created successfully')
+        }
+    } catch (error) {
+        console.error('Unexpected error in createDefaultUserSettings:', error)
     }
 }
 
