@@ -549,23 +549,45 @@ export default function PomodoroApp() {
           </div>
 
           <div className="flex gap-3 items-center">
-            {/* Spotify User Avatar */}
-            {(user && !spotifyConnected) && (
+            {/* User Avatar - sempre visibile se loggato */}
+            {isAuthenticated && user && (
               <Avatar
                 className="w-8 h-8 cursor-pointer"
                 onClick={() => {
-                  if (!isAuthenticated) {
-                    window.location.href = "/auth/login"
-                  } else {
-                    // Qui puoi aprire il menu profilo o altro
-                  }
+                  // Qui puoi aprire il menu profilo o altro
+                  console.log('User clicked on avatar')
                 }}
               >
-                <AvatarImage src={user?.avatar_url || "/placeholder-user.jpg"} alt={user?.display_name || "Profilo"} />
+                <AvatarImage 
+                  src={user?.avatar_url || "/placeholder-user.jpg"} 
+                  alt={user?.display_name || user?.email || "Profilo"} 
+                />
                 <AvatarFallback>
-                  {user?.display_name?.split(" ").map(n => n[0]).join("") || "?"}
+                  {user?.display_name 
+                    ? user.display_name.split(" ").map(n => n[0]).join("").toUpperCase()
+                    : user?.email 
+                      ? user.email[0].toUpperCase()
+                      : "?"
+                  }
                 </AvatarFallback>
               </Avatar>
+            )}
+
+            {/* Login Button - se non è loggato */}
+            {!isAuthenticated && !loading && (
+              <Button 
+                variant="outline" 
+                size="lg" 
+                className="rounded-2xl"
+                onClick={() => router.push('/auth/login')}
+              >
+                Login
+              </Button>
+            )}
+
+            {/* Loading spinner */}
+            {loading && (
+              <div className="w-8 h-8 rounded-full border-2 border-gray-300 border-t-gray-600 animate-spin"></div>
             )}
 
             <Dialog open={showLeaderboard} onOpenChange={setShowLeaderboard}>

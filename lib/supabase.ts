@@ -275,20 +275,38 @@ export const getUserProfile = async (userId: string) => {
     return data
 }
 
-export const createOrUpdateUserProfile = async (
-    userId: string, 
-    spotifyData: any,
-    tokens: { access_token: string; refresh_token?: string }
+export const createOrUpdateUserProfileFromSession = async (
+    session: any // Sessione Supabase con dati OAuth
 ) => {
+    const user = session.user
+    const spotifyAccessToken = session.provider_token || null
+    const spotifyRefreshToken = session.provider_refresh_token || null
+    
+    // Estrai i dati Spotify dall'user metadata
+    const spotifyData = {
+        id: user.user_metadata?.provider_id || user.user_metadata?.sub || null,
+        display_name: user.user_metadata?.full_name || user.user_metadata?.name || user.user_metadata?.display_name || null,
+        email: user.email || null,
+        images: user.user_metadata?.avatar_url ? [{ url: user.user_metadata.avatar_url }] : [],
+        country: user.user_metadata?.country || null
+    }
+
     const userProfile = {
-        id: userId,
+        id: user.id,
         spotify_id: spotifyData.id,
         display_name: spotifyData.display_name,
         email: spotifyData.email,
         avatar_url: spotifyData.images?.[0]?.url || null,
         country: spotifyData.country,
-        spotify_access_token: tokens.access_token,
-        spotify_refresh_token: tokens.refresh_token || null,
+        spotify_access_token: spotifyAccessToken,
+        spotify_refresh_token: spotifyRefreshToken,
+        // Aggiungi valori di default per i nuovi utenti
+        total_focus_time: 0,
+        sessions_completed: 0,
+        current_streak: 0,
+        max_streak: 0,
+        level: 1,
+        badge: '🌱'
     }
 
     const { data, error } = await supabase
@@ -303,7 +321,7 @@ export const createOrUpdateUserProfile = async (
     }
 
     // Create default user settings if not exists
-    await createDefaultUserSettings(userId)
+    await createDefaultUserSettings(user.id)
 
     return data
 }
@@ -413,7 +431,7 @@ export const getUserFocusSessions = async (userId: string, limit = 50) => {
 
 export const getTodayStats = async (userId: string) => {
     const today = new Date().toISOString().split('T')[0]
-    
+
     const { data, error } = await supabase
         .from('focus_sessions')
         .select('*')
