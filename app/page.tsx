@@ -495,16 +495,33 @@ export default function PomodoroApp() {
 
   useEffect(() => {
     if (spotifyConnected && user) {
-      // Carica le playlist dall'API Spotify
-      fetchSpotifyPlaylists()
+      // Verifica se l'utente ha un token Spotify valido
+      const hasSpotifyToken = user.spotify_access_token || user.spotify_refresh_token
+      
+      if (hasSpotifyToken) {
+        // Carica le playlist dall'API Spotify
+        fetchSpotifyPlaylists()
+      } else {
+        // Se non ha token, imposta spotifyConnected a false
+        setSpotifyConnected(false)
+        console.log('No Spotify tokens available, disconnecting...')
+      }
     }
   }, [spotifyConnected, user])
 
   const fetchSpotifyPlaylists = async () => {
     try {
-      const token = await getValidSpotifyToken()
+      // Prima prova a ottenere un token valido
+      let token = await getValidSpotifyToken()
+      
+      // Se non c'è un token valido, prova a fare il refresh
       if (!token) {
-        throw new Error("No valid Spotify token")
+        token = await refreshSpotifyToken()
+        if (!token) {
+          // Se anche il refresh fallisce, disconnetti Spotify
+          setSpotifyConnected(false)
+          throw new Error("No valid Spotify token")
+        }
       }
 
       const response = await fetch('/api/spotify/playlists', {
@@ -523,6 +540,8 @@ export default function PomodoroApp() {
       setSpotifyPlaylists(data)
     } catch (error) {
       console.error('Error fetching Spotify playlists:', error)
+      // Se c'è un errore, disconnetti Spotify
+      setSpotifyConnected(false)
       toast({
         title: CONSTANTS.ERROR_MESSAGES.FETCH_PLAYLISTS_FAILED,
         variant: "destructive",

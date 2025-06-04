@@ -119,7 +119,7 @@ export const STORAGE_KEYS = {
 }
 
 export const API_ENDPOINTS = {
-    SPOTIFY_ACCOUNTS: 'https://accounts.spotify.com',
+    SPOTIFY_ACCOUNTS: 'https://accounts.spotify.com/api',
     SPOTIFY_API: 'https://api.spotify.com/v1'
 }
 

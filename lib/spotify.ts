@@ -1,10 +1,10 @@
 // Spotify API configuration
 const SPOTIFY_CLIENT_ID = process.env.NEXT_PUBLIC_SPOTIFY_CLIENT_ID!
 const SPOTIFY_CLIENT_SECRET = process.env.SPOTIFY_CLIENT_SECRET!
-const SPOTIFY_REDIRECT_URI = process.env.NEXT_PUBLIC_SPOTIFY_REDIRECT_URI || 'http://localhost:3000/spotify-login'
+const SPOTIFY_REDIRECT_URI = process.env.NEXT_PUBLIC_SPOTIFY_REDIRECT_URI || 'http://127.0.0.1:3000/spotify-login'
 
 // Spotify API endpoints
-const SPOTIFY_ACCOUNTS_BASE_URL = 'https://accounts.spotify.com'
+const SPOTIFY_ACCOUNTS_BASE_URL = 'https://accounts.spotify.com/api'
 const SPOTIFY_API_BASE_URL = 'https://api.spotify.com/v1'
 
 export interface SpotifyUser {
@@ -102,7 +102,7 @@ export const getSpotifyAuthUrl = () => {
 
 // Exchange authorization code for access token
 export const exchangeCodeForToken = async (code: string): Promise<SpotifyTokenResponse> => {
-  const response = await fetch(`${SPOTIFY_ACCOUNTS_BASE_URL}/api/token`, {
+  const response = await fetch(`${SPOTIFY_ACCOUNTS_BASE_URL}/token`, {
     method: 'POST',
     headers: {
       'Content-Type': 'application/x-www-form-urlencoded',
@@ -124,7 +124,7 @@ export const exchangeCodeForToken = async (code: string): Promise<SpotifyTokenRe
 
 // Refresh access token
 export const refreshAccessToken = async (refreshToken: string): Promise<SpotifyTokenResponse> => {
-  const response = await fetch(`${SPOTIFY_ACCOUNTS_BASE_URL}/api/token`, {
+  const response = await fetch(`${SPOTIFY_ACCOUNTS_BASE_URL}/token`, {
     method: 'POST',
     headers: {
       'Content-Type': 'application/x-www-form-urlencoded',
@@ -296,4 +296,50 @@ export const setVolume = async (accessToken: string, volumePercent: number) => {
   if (!response.ok && response.status !== 204) {
     throw new Error('Failed to set volume')
   }
+}
+
+// Spotify client class
+class SpotifyClient {
+  private accessToken: string
+
+  constructor(accessToken: string) {
+    this.accessToken = accessToken
+  }
+
+  async getUserPlaylists(limit = 20) {
+    const response = await fetch(`${SPOTIFY_API_BASE_URL}/me/playlists?limit=${limit}&offset=0`, {
+      headers: {
+        'Authorization': `Bearer ${this.accessToken}`,
+        'Content-Type': 'application/json'
+      }
+    })
+
+    if (!response.ok) {
+      const error = await response.json()
+      throw new Error(error.error?.message || 'Failed to fetch playlists')
+    }
+
+    return response.json()
+  }
+
+  async getPlaylistTracks(playlistId: string) {
+    const response = await fetch(`${SPOTIFY_API_BASE_URL}/playlists/${playlistId}/tracks?limit=100&offset=0&fields=items(track(id,name,artists,album(id,name,images),duration_ms))`, {
+      headers: {
+        'Authorization': `Bearer ${this.accessToken}`,
+        'Content-Type': 'application/json'
+      }
+    })
+
+    if (!response.ok) {
+      const error = await response.json()
+      throw new Error(error.error?.message || 'Failed to fetch playlist tracks')
+    }
+
+    return response.json()
+  }
+}
+
+// Factory function to create Spotify client
+export const getSpotifyClient = (accessToken: string) => {
+  return new SpotifyClient(accessToken)
 }
